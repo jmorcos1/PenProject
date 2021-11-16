@@ -305,6 +305,7 @@ SROM = array
         0xc2, 0xe7, 0x4c, 0x1a, 0x97, 0x8d, 0x98, 0xb2, 0xc7, 0x0c, 0x59, 0x28, 0xf3, 0x9b
       ]
 )
+FIRMWARE_LENGTH = 4094
 #______________________________________
 
 #*Sensor Registers
@@ -363,28 +364,51 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #_____________________________________________
 
 
-#*spidev SETUP
-#--------------------------------------
-#region
-#*select SPI channel as channel 0
-#*           pin 24 = GPIO8 = SPI0 CE0 
-spi_ch = 0
-spi = spidev.SpiDev(0, spi_ch)  #Enable SPI
-#max Serial Clock speed of Mouse Sensor Chip is 2MHz
-spi.max_speed_hz = 2000000
-#endregion
-#_____________________________________________
+
 
 #*PI Pinout SETUP
 #--------------------------------------
 #region
-NCS = 11
+#NCS = 11
+NCS = 24
 #endregion
 #_____________________________________________
 
+def setup():
+  GPIO.setmode(GPIO.BOARD)
+  GPIO.setup(NCS, GPIO.OUT)
 
-initComplete = False 
+  #*spidev SETUP
+  #--------------------------------------
+  #region
+  #*select SPI channel as channel 0
+  #*           pin 24 = GPIO8 = SPI0 CE0 
+  spi_ch = 0
+  spi = spidev.SpiDev(0, spi_ch)  #Enable SPI
+  #max Serial Clock speed of Mouse Sensor Chip is 2MHz
+  spi.max_speed_hz = 2000000
+  spi.mode = 0b11
+  print(spi.lsbfirst)
+
+
+  #endregion
+  #_____________________________________________
+  
+""""
+
+
+
+#*F
+#--------------------------------------
+#region
+
+#endregion
+#_____________________________________________
+
+initComplete = False
 inBurst = False
+
+
 
 
 
@@ -392,17 +416,17 @@ inBurst = False
 
 while true: 
   SPI.init(baudrate=9600, *, polarity=0, phase=0, bits=8, firstbit=SPI.MSB, sck=None, mosi=None, miso=None, pins=(SCK, MOSI, MISO))
-  """
-  initializing by setting buadrate, setting to most significant bit and defining what pins are being used 
-  """
+
+  #initializing by setting buadrate, setting to most significant bit and defining what pins are being used 
+  
   #spi = spidev.SpiDev(bus number, device id)
 	spi.mode = #SPI mode as two bit pattern of clock polarity and phase [CPOL|CPHA], min: 0b00 = 0, max: 0b11 = 3
 	spi.bit_order = msb
 	print("ON")
 
 time.sleep(1000)
-
-initComplete = 9 
+"""
+#initComplete = 9 
 
 
 """writebytes(NCS, LOW)
@@ -419,14 +443,9 @@ spi.send_recv(b'1234', buf)          # send 4 bytes and receive 4 into buf
 spi.send_recv(buf, buf)              # send/recv 4 bytes from/to buf
 """
 
-def setup ()
-{
-	GPIO.setmode(GPIO.BOARD)
-	GPIO.setup(NCS, GPIO.OUT)
-
-}
 
 
+"""
 def adns_com_begin ()
 {
 	
@@ -437,3 +456,5 @@ def adns_com_begin ()
 finally:
     spi.close()
     GPIO.cleanup()
+
+"""

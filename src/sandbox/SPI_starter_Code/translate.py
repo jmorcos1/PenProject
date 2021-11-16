@@ -383,12 +383,15 @@ def setup():
   #region
   #*select SPI channel as channel 0
   #*           pin 24 = GPIO8 = SPI0 CE0 
+  
+  """
   spi_ch = 0
   spi = spidev.SpiDev(0, spi_ch)  #Enable SPI
   #max Serial Clock speed of Mouse Sensor Chip is 2MHz
   spi.max_speed_hz = 2000000
   spi.mode = 0b11
   print(spi.lsbfirst)
+  """
 
 
   #endregion

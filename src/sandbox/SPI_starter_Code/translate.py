@@ -373,9 +373,9 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #endregion
 #_____________________________________________
 
-def setup():
+def setup_spidev():
   GPIO.setmode(GPIO.BOARD)
-  GPIO.setup(NCS, GPIO.OUT)
+  #GPIO.setup(NCS, GPIO.OUT)
 
   #*spidev SETUP
   #--------------------------------------
@@ -385,6 +385,9 @@ def setup():
   spi = spidev.SpiDev(0, spi_ch)    #Enable SPI on SPI0, CE0
   spi.max_speed_hz = 2000000        #*max SCLK Freq. PMW3360 Chip: 2MHz
   spi.mode = 0b11                   #*SPI_mode3 = [CPOL][CPHA] = 11 //as per DSheet
+  #!bits_per_word
+  #?loop
+
   """
     *Notes of spidev settings:
     .//bits_per_word
@@ -424,22 +427,28 @@ def setup():
                   ?see data sheet for fuzzy details on t_MISOs
                   -t_sclk-ncs(read) after last righing edge of clock, SS goes back to high
         ?see data sheet for timing details
+    ..//loop
+      ?Read-only
+      -Used for testing - connect MOSI to MISO - ECHO
+    ..//lsb first - Default is False - what we want
+    ..//max_speed_hz: set clk frequency for device - must change default - datasheet says 2 MHz
+    ..//no_cs
+      ?not sure why would u..
+      prob don't need
+      -Disable chip select (CE0?)
+    ..//three wire - Combines MOSI and MISO
   """
-
-  print("")
+  print("SPI 0,0 is on")
 
 
   #endregion
   #_____________________________________________
-  
+
+def mouse_reset_shutdown():
+    
 
 
-
-
-
-
-
-setup()
+setup_spidev()
 
 """"
 

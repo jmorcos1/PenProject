@@ -363,14 +363,13 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #endregion
 #_____________________________________________
 
-
-
-
 #*PI Pinout SETUP
 #--------------------------------------
 #region
-#NCS = 11
-NCS = 24
+#//NCS = 11
+#//NCS = 24
+#!ss handled by SPI0-CE0
+
 #endregion
 #_____________________________________________
 
@@ -381,22 +380,65 @@ def setup():
   #*spidev SETUP
   #--------------------------------------
   #region
-  #*select SPI channel as channel 0
-  #*           pin 24 = GPIO8 = SPI0 CE0 
-  
+  #Open SPI port (bus) 0, device (CS) 0
+  spi_ch = 0                        #*pin 24 = GPIO8 = SPI0 CE0
+  spi = spidev.SpiDev(0, spi_ch)    #Enable SPI on SPI0, CE0
+  spi.max_speed_hz = 2000000        #*max SCLK Freq. PMW3360 Chip: 2MHz
+  spi.mode = 0b11                   #*SPI_mode3 = [CPOL][CPHA] = 11 //as per DSheet
   """
-  spi_ch = 0
-  spi = spidev.SpiDev(0, spi_ch)  #Enable SPI
-  #max Serial Clock speed of Mouse Sensor Chip is 2MHz
-  spi.max_speed_hz = 2000000
-  spi.mode = 0b11
-  print(spi.lsbfirst)
+    *Notes of spidev settings:
+    .//bits_per_word
+      :Number of bits per word //Default: 8 //Range: 8-16
+      !May be read-only on pi
+      -// spidev will use the Pi's Linux SPI driver.
+          The Pi's SPI hardware supports 8 bits only on the main SPI device (spi0.x)
+          "We will have to bitbang"
+    ..//mode + cshigh
+      cshigh: If True, SS is Active High //Default: False, Active Low //what we want
+      mode: 2-bit pattern SPI mode = [CPOL][CPHA]
+        -CPOL: 0 for normal Clock, 1 for active Low clock
+        -CPHA: 0 = (First Cycle begins when SS Goes Low, Data is sampled on First Clock edge)
+               1 = (First Cycle begins on first Clock Edge After SS Goes Low, Data is sampled on Second Clock Edge)
+        *For PMW3360:
+        > mode = 11 //SCLK is active low, with phase 1
+        > SS Active Low
+        -//How Data Transfers Work:
+        --> SS goes low to begin transaction
+        --> t_ncs-sclk after SS goes low, first clock cycle begins on falling edge of SCLK
+        --> Data is sampled on rising edge
+        ?-Seems like word is 16 bits (16 clock cycles for READ and WRITE)
+        --> MOSI driven by MCU
+        --> MISO driven by sensor
+        --> MOSI outputs each bit t_setupMOSI before rising edge, and holds for t_HoldMOSI
+        =>WRITE:  Data going from MCU to sensor              
+                  -MOSI first bit is 1 then 7 address bits MSBfirst A_6-A_0, then 8 data bits D_7-D_0
+                  -MISO goes low at beginning of first cycle and stays low
+                  -t_sclk-ncs(write) after last righing edge of clock, SS goes back to high
+        =>READ:   Data going from sensor to MCU
+                  -MOSI first bit is 0 then 7 address bits MSBfirst A_6-A_0, then Z
+                  -After MOSI outputs last Address bit, 8th Clock cycle is extended, SCLK is held high for t_SRAD_delay
+                  -Then SCLK falling edge beigins cycle 9 and continues to 16
+                  -MISO goes low at beginning of first cycle
+                  -MISO stays low until t_SRAD_delay after last Address bit is sent by MOSI
+                  -MISO outputs first Data bit on cycle 9
+                  ?see data sheet for fuzzy details on t_MISOs
+                  -t_sclk-ncs(read) after last righing edge of clock, SS goes back to high
+        ?see data sheet for timing details
   """
+
+  print("")
 
 
   #endregion
   #_____________________________________________
   
+
+
+
+
+
+
+
 setup()
 
 """"

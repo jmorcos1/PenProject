@@ -373,82 +373,130 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #endregion
 #_____________________________________________
 
-def setup_spidev():
-  GPIO.setmode(GPIO.BOARD)
-  #GPIO.setup(NCS, GPIO.OUT)
+#*Timing Values
+#--------------------------------------
+#region
+#MAX_SCLK_FR = 2000000
+MAX_SCLK_FR = 1000000
+#//MAX_SCLK_FR = 5000
+T_SCLK_NCS_W = 35 #µs
+T_S_WW_WR = 180/1000000 #s
+DELAY_AFTER_WRITE = T_S_WW_WR - T_SCLK_NCS_W/1000000
 
-  #*spidev SETUP
-  #--------------------------------------
-  #region
-  #Open SPI port (bus) 0, device (CS) 0
-  spi_ch = 0                        #*pin 24 = GPIO8 = SPI0 CE0
-  spi = spidev.SpiDev(0, spi_ch)    #Enable SPI on SPI0, CE0
-  spi.max_speed_hz = 2000000        #*max SCLK Freq. PMW3360 Chip: 2MHz
-  spi.mode = 0b11                   #*SPI_mode3 = [CPOL][CPHA] = 11 //as per DSheet
-  #!bits_per_word
-  #?loop
-
-  """
-    *Notes of spidev settings:
-    .//bits_per_word
-      :Number of bits per word //Default: 8 //Range: 8-16
-      !May be read-only on pi
-      -// spidev will use the Pi's Linux SPI driver.
-          The Pi's SPI hardware supports 8 bits only on the main SPI device (spi0.x)
-          "We will have to bitbang"
-    ..//mode + cshigh
-      cshigh: If True, SS is Active High //Default: False, Active Low //what we want
-      mode: 2-bit pattern SPI mode = [CPOL][CPHA]
-        -CPOL: 0 for normal Clock, 1 for active Low clock
-        -CPHA: 0 = (First Cycle begins when SS Goes Low, Data is sampled on First Clock edge)
-               1 = (First Cycle begins on first Clock Edge After SS Goes Low, Data is sampled on Second Clock Edge)
-        *For PMW3360:
-        > mode = 11 //SCLK is active low, with phase 1
-        > SS Active Low
-        -//How Data Transfers Work:
-        --> SS goes low to begin transaction
-        --> t_ncs-sclk after SS goes low, first clock cycle begins on falling edge of SCLK
-        --> Data is sampled on rising edge
-        ?-Seems like word is 16 bits (16 clock cycles for READ and WRITE)
-        --> MOSI driven by MCU
-        --> MISO driven by sensor
-        --> MOSI outputs each bit t_setupMOSI before rising edge, and holds for t_HoldMOSI
-        =>WRITE:  Data going from MCU to sensor              
-                  -MOSI first bit is 1 then 7 address bits MSBfirst A_6-A_0, then 8 data bits D_7-D_0
-                  -MISO goes low at beginning of first cycle and stays low
-                  -t_sclk-ncs(write) after last righing edge of clock, SS goes back to high
-        =>READ:   Data going from sensor to MCU
-                  -MOSI first bit is 0 then 7 address bits MSBfirst A_6-A_0, then Z
-                  -After MOSI outputs last Address bit, 8th Clock cycle is extended, SCLK is held high for t_SRAD_delay
-                  -Then SCLK falling edge beigins cycle 9 and continues to 16
-                  -MISO goes low at beginning of first cycle
-                  -MISO stays low until t_SRAD_delay after last Address bit is sent by MOSI
-                  -MISO outputs first Data bit on cycle 9
-                  ?see data sheet for fuzzy details on t_MISOs
-                  -t_sclk-ncs(read) after last righing edge of clock, SS goes back to high
-        ?see data sheet for timing details
-    ..//loop
-      ?Read-only
-      -Used for testing - connect MOSI to MISO - ECHO
-    ..//lsb first - Default is False - what we want
-    ..//max_speed_hz: set clk frequency for device - must change default - datasheet says 2 MHz
-    ..//no_cs
-      ?not sure why would u..
-      prob don't need
-      -Disable chip select (CE0?)
-    ..//three wire - Combines MOSI and MISO
-  """
-  print("SPI 0,0 is on")
+#endregion
+#_____________________________________________
 
 
-  #endregion
-  #_____________________________________________
+#GPIO.setmode(GPIO.BOARD)
+
+
+#*spidev SETUP
+#--------------------------------------
+#region
+#Open SPI port (bus) 0, device (CS) 0
+spi_ch = 0                        #*pin 24 = GPIO8 = SPI0 CE0
+spi = spidev.SpiDev(0, spi_ch)    #Enable SPI on SPI0, CE0
+spi.max_speed_hz = MAX_SCLK_FR        #*max SCLK Freq. PMW3360 Chip: 2MHz
+spi.mode = 0b11                   #*SPI_mode3 = [CPOL][CPHA] = 11 //as per DSheet
+#!bits_per_word
+#?loop
+"""
+  *Notes of spidev settings:
+  .//bits_per_word
+    :Number of bits per word //Default: 8 //Range: 8-16
+    !May be read-only on pi
+    -// spidev will use the Pi's Linux SPI driver.
+        The Pi's SPI hardware supports 8 bits only on the main SPI device (spi0.x)
+        "We will have to bitbang"
+  ..//mode + cshigh
+    cshigh: If True, SS is Active High //Default: False, Active Low //what we want
+    mode: 2-bit pattern SPI mode = [CPOL][CPHA]
+      -CPOL: 0 for normal Clock, 1 for active Low clock
+      -CPHA: 0 = (First Cycle begins when SS Goes Low, Data is sampled on First Clock edge)
+             1 = (First Cycle begins on first Clock Edge After SS Goes Low, Data is sampled on Second Clock Edge)
+      *For PMW3360:
+      > mode = 11 //SCLK is active low, with phase 1
+      > SS Active Low
+      -//How Data Transfers Work:
+      --> SS goes low to begin transaction
+      --> t_ncs-sclk after SS goes low, first clock cycle begins on falling edge of SCLK
+      --> Data is sampled on rising edge
+      ?-Seems like word is 16 bits (16 clock cycles for READ and WRITE)
+      --> MOSI driven by MCU
+      --> MISO driven by sensor
+      --> MOSI outputs each bit t_setupMOSI before rising edge, and holds for t_HoldMOSI
+      =>WRITE:  Data going from MCU to sensor              
+                -MOSI first bit is 1 then 7 address bits MSBfirst A_6-A_0, then 8 data bits D_7-D_0
+                -MISO goes low at beginning of first cycle and stays low
+                -t_sclk-ncs(write) after last righing edge of clock, SS goes back to high
+      =>READ:   Data going from sensor to MCU
+                -MOSI first bit is 0 then 7 address bits MSBfirst A_6-A_0, then Z
+                -After MOSI outputs last Address bit, 8th Clock cycle is extended, SCLK is held high for t_SRAD_delay
+                -Then SCLK falling edge beigins cycle 9 and continues to 16
+                -MISO goes low at beginning of first cycle
+                -MISO stays low until t_SRAD_delay after last Address bit is sent by MOSI
+                -MISO outputs first Data bit on cycle 9
+                ?see data sheet for fuzzy details on t_MISOs
+                -t_sclk-ncs(read) after last righing edge of clock, SS goes back to high
+      ?see data sheet for timing details
+  ..//loop
+    ?Read-only
+    -Used for testing - connect MOSI to MISO - ECHO
+  ..//lsb first - Default is False - what we want
+  ..//max_speed_hz: set clk frequency for device - must change default - datasheet says 2 MHz
+  ..//no_cs
+    ?not sure why would u..
+    prob don't need
+    -Disable chip select (CE0?)
+  ..//three wire - Combines MOSI and MISO
+"""
+print("SPI 0,0 is on")
+#endregion
+#_____________________________________________
+
+def pmw_WriteReg(message):
+  regAdress = (message[0] | 0x08)
+  spi.xfer([regAdress, message[1]], MAX_SCLK_FR, T_SCLK_NCS_W)
+  time.sleep(DELAY_AFTER_WRITE)
 
 def mouse_reset_shutdown():
-    
+    #empty message - write 0x00 to shutdown register
+      #data should have no effect
+    emptyMessage = array('B', [SHUTDOWN, 0x00])
+
+try:
+  while(True):
+    pmw_WriteReg(array('B', [SHUTDOWN, 0xB6]))
+
+finally:
+  spi.close()
+  #GPIO.cleanup()
 
 
-setup_spidev()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 """"
 
@@ -509,8 +557,6 @@ def adns_com_begin ()
 
 
 
-finally:
-    spi.close()
-    GPIO.cleanup()
+
 
 """

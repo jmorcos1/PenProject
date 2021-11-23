@@ -1,12 +1,13 @@
-import RPi.GPIO as GPIO
+import board
+import busio
+import digitalio
 import time
-import spidev
-from array import array
-import numpy as np
+
 
 """
 SENSOR INFO:
 ----------------------------------------------------
+#region
 *PMW3360 on a Breakout Board (PCB)
 -On-Board Power regulator - Compatable with 3.3V or 5V input
 *Use 3.3v (PI pin 1)
@@ -23,12 +24,13 @@ SENSOR INFO:
 
 *See data sheet for timing details
 *see datasheet for register info
+#endregion
 ____________________________________________________
 """
 
 #*Sensor Firmware
 #--------------------------------------
-SROM = array('B', [0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1d, 0xb8, 0xf2, 0x66, 0x4e, 
+SROM = bytearray([0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1d, 0xb8, 0xf2, 0x66, 0x4e, 
         0xff, 0x5d, 0x19, 0xb0, 0xc2, 0x04, 0x69, 0x54, 0x2a, 0xd6, 0x2e, 0xbf, 0xdd, 0x19, 0xb0, 
         0xc3, 0xe5, 0x29, 0xb1, 0xe0, 0x23, 0xa5, 0xa9, 0xb1, 0xc1, 0x00, 0x82, 0x67, 0x4c, 0x1a, 
         0x97, 0x8d, 0x79, 0x51, 0x20, 0xc7, 0x06, 0x8e, 0x7c, 0x7c, 0x7a, 0x76, 0x4f, 0xfd, 0x59, 
@@ -302,6 +304,14 @@ SROM = array('B', [0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0
         0x74, 0x4b, 0x14, 0xaa, 0xb7, 0xec, 0x3b, 0xd5, 0x28, 0xd2, 0x07, 0x6d, 0x39, 0xd1, 0x20, 
         0xc2, 0xe7, 0x4c, 0x1a, 0x97, 0x8d, 0x98, 0xb2, 0xc7, 0x0c, 0x59, 0x28, 0xf3, 0x9b])
 FIRMWARE_LENGTH = 4094
+
+#TEST
+"""
+for byte in SROM:
+    print(hex(byte))
+
+print(len(SROM))
+"""
 #______________________________________
 
 #*Sensor Registers
@@ -359,16 +369,6 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #endregion
 #_____________________________________________
 
-#*PI Pinout SETUP
-#--------------------------------------
-#region
-#//NCS = 11
-#//NCS = 24
-#!ss handled by SPI0-CE0
-
-#endregion
-#_____________________________________________
-
 #*Timing Values
 #--------------------------------------
 #region
@@ -378,6 +378,7 @@ MAX_SCLK_FR = 1000000
 #! Looking at scope, 2 MHz looks too choppy; SCLK doesn't settle; unnecissarily fast?
 #//MAX_SCLK_FR = 5000
 T_SCLK_NCS_W = 35 #µs
+T_NCS_SCLK = 120 #ns
 T_SCLK_NCS_R = 120 #ns
 T_S_WW_WR = 180/1000000 #s
 DELAY_AFTER_WRITE = T_S_WW_WR - T_SCLK_NCS_W/1000000
@@ -388,151 +389,143 @@ DELAY_AFTER_READ = T_SRR_RW/1000000 - T_SCLK_NCS_R/1000000000
 #endregion
 #_____________________________________________
 
-
-#GPIO.setmode(GPIO.BOARD)
-
-
-#*spidev SETUP
+#*PI Pinout SETUP
 #--------------------------------------
 #region
-#Open SPI port (bus) 0, device (CS) 0
-spi_ch = 0                        #*pin 24 = GPIO8 = SPI0 CE0
-spi = spidev.SpiDev(0, spi_ch)    #Enable SPI on SPI0, CE0
-spi.max_speed_hz = MAX_SCLK_FR        #*max SCLK Freq. PMW3360 Chip: 2MHz
-spi.mode = 0b11                   #*SPI_mode3 = [CPOL][CPHA] = 11 //as per DSheet
-#!bits_per_word
-#?loop
-"""
-  *Notes of spidev settings:
-  .//bits_per_word
-    :Number of bits per word //Default: 8 //Range: 8-16
-    !May be read-only on pi
-    -// spidev will use the Pi's Linux SPI driver.
-        The Pi's SPI hardware supports 8 bits only on the main SPI device (spi0.x)
-        "We will have to bitbang"
-  ..//mode + cshigh
-    cshigh: If True, SS is Active High //Default: False, Active Low //what we want
-    mode: 2-bit pattern SPI mode = [CPOL][CPHA]
-      -CPOL: 0 for normal Clock, 1 for active Low clock
-      -CPHA: 0 = (First Cycle begins when SS Goes Low, Data is sampled on First Clock edge)
-             1 = (First Cycle begins on first Clock Edge After SS Goes Low, Data is sampled on Second Clock Edge)
-      *For PMW3360:
-      > mode = 11 //SCLK is active low, with phase 1
-      > SS Active Low
-      -//How Data Transfers Work:
-      --> SS goes low to begin transaction
-      --> t_ncs-sclk after SS goes low, first clock cycle begins on falling edge of SCLK
-      --> Data is sampled on rising edge
-      ?-Seems like word is 16 bits (16 clock cycles for READ and WRITE)
-      --> MOSI driven by MCU
-      --> MISO driven by sensor
-      --> MOSI outputs each bit t_setupMOSI before rising edge, and holds for t_HoldMOSI
-      =>WRITE:  Data going from MCU to sensor              
-                -MOSI first bit is 1 then 7 address bits MSBfirst A_6-A_0, then 8 data bits D_7-D_0
-                -MISO goes low at beginning of first cycle and stays low
-                -t_sclk-ncs(write) after last righing edge of clock, SS goes back to high
-      =>READ:   Data going from sensor to MCU
-                -MOSI first bit is 0 then 7 address bits MSBfirst A_6-A_0, then Z
-                -After MOSI outputs last Address bit, 8th Clock cycle is extended, SCLK is held high for t_SRAD_delay
-                -Then SCLK falling edge beigins cycle 9 and continues to 16
-                -MISO goes low at beginning of first cycle
-                -MISO stays low until t_SRAD_delay after last Address bit is sent by MOSI
-                -MISO outputs first Data bit on cycle 9
-                ?see data sheet for fuzzy details on t_MISOs
-                -t_sclk-ncs(read) after last righing edge of clock, SS goes back to high
-      ?see data sheet for timing details
-  ..//loop
-    ?Read-only
-    -Used for testing - connect MOSI to MISO - ECHO
-  ..//lsb first - Default is False - what we want
-  ..//max_speed_hz: set clk frequency for device - must change default - datasheet says 2 MHz
-  ..//no_cs
-    ?not sure why would u..
-    prob don't need
-    -Disable chip select (CE0?)
-  ..//three wire - Combines MOSI and MISO
-"""
-print("SPI 0,0 is on")
+#SPI - Setup
+#*Chip Select Pin
+CS = digitalio.DigitalInOut(board.D25)
+CS.direction = digitalio.Direction.OUTPUT
+CS.value = True
+
+spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
+while not spi.try_lock():
+    pass
+spi.configure(baudrate=1000000, phase=1, polarity=1)
+
+
+#mouseSensor - Setup
+#TODO: Set a MOTION Pin on board
 #endregion
 #_____________________________________________
 
+#More Setup Parameters
 DELAY_TIME = 300/1000000
 CPI = 1600
 
-#TEST
-#---------------------------------------------
-def testTransmittion(message):
-  #spi.xfer(message)
-  spi.xfer(message, MAX_SCLK_FR, T_SCLK_NCS_W)
-  time.sleep(DELAY_AFTER_WRITE)
-  #spi.writebytes(message)
-#_____________________________________________
+def pmw_WriteReg(addr, data):
+    regAddress = (addr | 0x08)
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    spi.write(bytes([regAddress, data]))
+    time.sleep(T_SCLK_NCS_W/1000000)
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
 
-def pmw_WriteReg(message):
-  regAdress = (message[0] | 0x08)
-  spi.xfer([regAdress, message[1]], MAX_SCLK_FR, T_SCLK_NCS_W)
-  time.sleep(DELAY_AFTER_WRITE)
-
-def pmw_ReadReg(message):
-  regAdress = (message[0] & 0x7F)
-  spi.xfer([regAdress], MAX_SCLK_FR, T_SCLK_NCS_W)
-  time.sleep(T_SRAD/1000000)
-  byteRead = spi.xfer([0x00], MAX_SCLK_FR, T_SCLK_NCS_W)
-  time.sleep(DELAY_AFTER_READ)
-  return byteRead
-
+def pmw_ReadReg(addr):
+    regAddress = (addr & 0x7F)
+    receive = bytearray(1)
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    spi.write(bytes([regAddress]))
+    time.sleep(T_SRAD/1000000)
+    spi.readinto(receive)
+    time.sleep(T_SCLK_NCS_R/1000000000)
+    CS.value = True
+    time.sleep(DELAY_AFTER_READ)
+    return receive
 
 def performStartup():
-  DELAY_AFTER_FW = 10/1000000
+    DELAY_AFTER_FW = 10/1000000
+    DELAY_CS_TOGGLE = 2/1000000
+    DELAY_CS_TOGGLE2 = 40/1000000
+    DELAY_REBOOT = 50/1000000
+
+    CS.value = True
+    CS.value = False
+    time.sleep(DELAY_CS_TOGGLE)
+    CS.value = True
+
+    shutdownMSG = bytearray([SHUTDOWN, 0xB6])
+    pmw_WriteReg(shutdownMSG[0], shutdownMSG[1])
+    time.sleep(DELAY_TIME)
+
+    CS.value = False
+    time.sleep(DELAY_CS_TOGGLE2)
+    CS.value = True
+    time.sleep(DELAY_CS_TOGGLE2)
+
+    resetMSG = bytearray([POWER_UP_RESET, 0x5A])
+    pmw_WriteReg(resetMSG[0], resetMSG[1])
+    time.sleep(DELAY_REBOOT)
+
+    regAddr = bytearray([MOTION])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('MOTION: ', hex(readByte[0]))
+
+    regAddr = bytearray([DXL])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DXL: ', hex(readByte[0]))
+
+    regAddr = bytearray([DXH])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DXH: ', hex(readByte[0]))
+
+    regAddr = bytearray([DYL])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DYL: ', hex(readByte[0]))
+
+    regAddr = bytearray([DYH])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DYH: ', hex(readByte[0]))
+
+    pmw_uploadFW()
+
+    time.sleep(DELAY_AFTER_FW)
+
+    setCPI(CPI)
+
+    regAddr = bytearray([SROM_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('SROM ID: ', hex(readByte[0]))
+
+    regAddr = bytearray([PROD_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('PROD ID: ', hex(readByte[0]))
 
 
 
+def pmw_uploadFW():
+    print("uploading Firmware...")
 
-  emptyMessage = array('B', [CNFG2, 0x00])
-  pmw_WriteReg(emptyMessage)
-  time.sleep(DELAY_TIME)
+    FW_DELAY = 10/1000000
+    FW_DELAY2 = 15/1000000
+    FW_DELAY3 = 20/1000000
 
-  shutDownMessage = array('B', [SHUTDOWN, 0xB6])
-  pmw_WriteReg(shutDownMessage)
-  time.sleep(DELAY_TIME)
+    message = bytearray([CNFG2, 0x00])
+    pmw_WriteReg(message[0], message[1])
 
-  resetMessage = array('B', [POWER_UP_RESET, 0x5A])
-  pmw_WriteReg(resetMessage)
-  time.sleep(DELAY_TIME)
+    message = bytearray([SROM_EN, 0x1D])
+    pmw_WriteReg(message[0], message[1])
 
-  regAddr = array('B', [MOTION])
-  readByte = pmw_ReadReg(regAddr)
-  print('MOTION', readByte)
+    message = bytearray([(SROM_LOAD_BURST | 0x80)])
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    spi.write(message)
+    time.sleep(FW_DELAY2)
 
-  regAddr = array('B', [DXL])
-  readByte = pmw_ReadReg(regAddr)
-  print('DXL', readByte)
-  
-  regAddr = array('B', [DXH])
-  readByte = pmw_ReadReg(regAddr)
-  print('DXH', readByte)
+    for byte in SROM:
+        spi.write(bytes([byte]))
+        time.sleep(FW_DELAY2)
+    
+    regAddr = bytearray([SROM_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('SROM ID: ', hex(readByte[0]))
 
-  regAddr = array('B', [DYL])
-  readByte = pmw_ReadReg(regAddr)
-  print('DYL', readByte)
+    message = bytearray([CNFG2, 0x00])
+    pmw_WriteReg(message[0], message[1])
 
-  regAddr = array('B', [DYH])
-  readByte = pmw_ReadReg(regAddr)
-  print('DYH', readByte)
-
-  pmw_uploadFW()
-
-  time.sleep(DELAY_AFTER_FW)
-
-  setCPI(CPI)
-
-  regAddr = array('B', [PROD_ID])
-  readByte = pmw_ReadReg(regAddr)
-  print('PROD ID:', readByte)
-
-
-
-  
+    CS.value = True
 
 
 def setCPI(cpiVal):
@@ -544,222 +537,34 @@ def setCPI(cpiVal):
   elif(myCPI > 0x77):
     myCPI = 0x77
 
-  cpiMessage = array('B', [CNFG1, myCPI])
-  pmw_WriteReg(cpiMessage)
+  cpiMessage = bytearray([CNFG1, myCPI])
+  pmw_WriteReg(cpiMessage[0], cpiMessage[1])
   time.sleep(DELAY_TIME)
 
   print('set CPI to: ', cpiVal)
 
-
-
-
-
-def pmw_uploadFW():
-  print("uploading Firmware...")
-
-  FW_DELAY = 10/1000000
-  FW_DELAY2 = 20/1000000
-
-  message = array('B', [CNFG2, 0x00])
-  pmw_WriteReg(message)
-
-  message = array('B', [SROM_EN, 0x1D])
-  pmw_WriteReg(message)
-
-  time.sleep(FW_DELAY)
-
-  message = array('B', [SROM_EN, 0x18])
-  pmw_WriteReg(message)
-
-  message = array('B', [(SROM_LOAD_BURST | 0x80)])
-  spi.xfer([message[0]], MAX_SCLK_FR, T_SCLK_NCS_W)
-
-  time.sleep(FW_DELAY2)
-
-  
-  """ Re-wrote below
-  //for byte in range(0, FIRMWARE_LENGTH):
-  //  message = array('B', [SROM[byte]])
-  //  spi.xfer([message[0]], MAX_SCLK_FR, T_SCLK_NCS_W)
-  //  print(message)
-  //  time.sleep(FW_DELAY2)
-  """
-
-  for byte in SROM:
-    #message = array('B', [byte])
-    spi.xfer([byte], MAX_SCLK_FR, T_SCLK_NCS_W)
-    #print(message)
-    time.sleep(FW_DELAY2)
-  
-  regAddr = array('B', [SROM_ID])
-  print('SROM ID: ',pmw_ReadReg(regAddr))
-
-  message = array('B', [CNFG2, 0x00])
-  pmw_WriteReg(message)
-
-
-  
-
 def setUp():
-  #for byte in range(0, FIRMWARE_LENGTH):
-  #  print(SROM[byte])
-  performStartup()
-
-
-  
-
-
-
-def mouse_reset_shutdown():
-    #empty message - write 0x00 to shutdown register
-      #data should have no effect
-    emptyMessage = array('B', [SHUTDOWN, 0x00])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-testCount = 0
-
+    performStartup()
 
 
 try:
-
-
-  '''
-  while(True):
-    
-    """
-    #region
-    #TEST
-    transmissionStartT = time.monotonic_ns()
-    testTransmittion([0xFF])
-    transmissionEndT = time.monotonic_ns()
-    transmissionTime = transmissionEndT - transmissionStartT
-    if(testCount < 6):
-      print(transmissionTime)
-    testCount+=1
-    #time.sleep(1)
-    #endregion
-    """
-
-    pmw_WriteReg(array('B', [SHUTDOWN, 0xB6]))
-
-  '''
-
-  time.sleep(5)
-  #spi.cshigh = True
-  #time.sleep(5)
-  #spi.cshigh = False
-  #time.sleep(5)
-  setUp()
-
-
-
-
-
-
+    setUp()
 
 finally:
-  spi.close()
-  #GPIO.cleanup()
+  spi.unlock()
 
 
 
 
 
 
+    
 
 
 
 
 
 
+    
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-""""
-
-
-
-#*F
-#--------------------------------------
-#region
-
-#endregion
-#_____________________________________________
-
-initComplete = False
-inBurst = False
-
-
-
-
-
-
-
-while true: 
-  SPI.init(baudrate=9600, *, polarity=0, phase=0, bits=8, firstbit=SPI.MSB, sck=None, mosi=None, miso=None, pins=(SCK, MOSI, MISO))
-
-  #initializing by setting buadrate, setting to most significant bit and defining what pins are being used 
-  
-  #spi = spidev.SpiDev(bus number, device id)
-	spi.mode = #SPI mode as two bit pattern of clock polarity and phase [CPOL|CPHA], min: 0b00 = 0, max: 0b11 = 3
-	spi.bit_order = msb
-	print("ON")
-
-time.sleep(1000)
-"""
-#initComplete = 9 
-
-
-"""writebytes(NCS, LOW)
-
-
-writebytes(NCS, HIGH)"""
-
-
-
-"""
-data = spi.send_recv(b'1234')        # send 4 bytes and receive 4 bytes
-buf = bytearray(4)
-spi.send_recv(b'1234', buf)          # send 4 bytes and receive 4 into buf
-spi.send_recv(buf, buf)              # send/recv 4 bytes from/to buf
-"""
-
-
-
-"""
-def adns_com_begin ()
-{
-	
-}
-
-
-
-
-
-"""

@@ -412,6 +412,7 @@ spi.configure(baudrate=1000000, phase=1, polarity=1)
 #More Setup Parameters
 DELAY_TIME = 300/1000000
 CPI = 1600
+initComplete = False
 
 def pmw_WriteReg(addr, data):
     regAddress = (addr | 0x08)
@@ -425,6 +426,19 @@ def pmw_WriteReg(addr, data):
 def pmw_ReadReg(addr):
     regAddress = (addr & 0x7F)
     receive = bytearray(1)
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    spi.write(bytes([regAddress]))
+    time.sleep(T_SRAD/1000000)
+    spi.readinto(receive)
+    time.sleep(T_SCLK_NCS_R/1000000000)
+    CS.value = True
+    time.sleep(DELAY_AFTER_READ)
+    return receive
+
+def pmw_ReadMotionBurst(addr):
+    regAddress = (addr & 0x7F)
+    receive = bytearray(12)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(bytes([regAddress]))
@@ -543,12 +557,83 @@ def setCPI(cpiVal):
 
   print('set CPI to: ', cpiVal)
 
+def displayRegisters():
+    regAddr = bytearray([PROD_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('PROD ID: ', hex(readByte[0]))
+
+    regAddr = bytearray([REV_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('REV ID: ', hex(readByte[0]))
+
+    regAddr = bytearray([INV_PROD_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('Invers Prod ID: ', hex(readByte[0]))
+
+    regAddr = bytearray([SROM_ID])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('SROM ID: ', hex(readByte[0]))
+
+    regAddr = bytearray([MOTION])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('MOTION: ', hex(readByte[0]))
+
+    regAddr = bytearray([DXL])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DXL: ', hex(readByte[0]))
+
+    regAddr = bytearray([MOTION])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DXH: ', hex(readByte[0]))
+
+
+def getDeltas():
+    burstBuffer = bytearray(12)
+    regAddr = bytearray([MOT_BURST])
+    burstBuffer = pmw_ReadMotionBurst(regAddr[0])
+    
+    motionF = (burstBuffer[0] & 0x80) > 0
+
+    #print(motionF)
+
+    delta_xL = bytearray([burstBuffer[2]])
+
+    #print(delta_xL)
+
+
+    delta_xH = bytearray([burstBuffer[3]])
+    delta_yL = bytearray([burstBuffer[4]])
+    delta_yH = bytearray([burstBuffer[5]])
+
+    deltaX = (delta_xH[0] << 8) | delta_xL[0]
+    deltaY = (delta_yH[0] << 8) | delta_yL[0]
+
+    return [motionF, deltaX, deltaY]
+
+
 def setUp():
     performStartup()
+    time.sleep(1)
+    displayRegisters()
+    initComplete = True
 
-
+setUp()
 try:
-    setUp()
+    
+    while(True):
+        motion_deltaXY = getDeltas()
+        
+        
+        if(motion_deltaXY[0]):
+            print('dX: ', motion_deltaXY[1], '   dY: ', motion_deltaXY[2])
+            time.sleep(5)
+
+        
+        
+        #print('dX: ', motion_deltaXY[1], '   dY: ', motion_deltaXY[2])
+    
+        time.sleep(800/1000000)
+
 
 finally:
   spi.unlock()

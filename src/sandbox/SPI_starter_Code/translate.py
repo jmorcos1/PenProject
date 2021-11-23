@@ -2,6 +2,7 @@ import RPi.GPIO as GPIO
 import time
 import spidev
 from array import array
+import numpy as np
 
 """
 SENSOR INFO:
@@ -311,55 +312,55 @@ FIRMWARE_LENGTH = 4094
 #*Sensor Registers
 #--------------------------------------
 #region
-PROD_ID = 0x00
-REV_ID = 0x01
-MOTION = 0x02
-DXL = 0x03
-DXH = 0x04
-DYL = 0x05
-DYH = 0x06
-SQUAL = 0x07
-RAW_DATA_SUM = 0x08
-MAX_RAW_DATA = 0x09
-MIN_RAW_DATA = 0x0A
-SHUTTER_L = 0x0B
-SHUTTER_U = 0x0C
-CNTRL = 0x0D
-CNFG1 = 0x0F
-CNFG2 = 0x10
-ANGLE_TUNE = 0x11
-FRAME_CAPTURE = 0x12
-SROM_EN = 0x13
-RUN_DSHFT = 0x14
-REST1_RATE_L = 0x15
-REST1_RATE_U = 0x16
-REST1_DSHFT = 0x17
-REST2_RATE_L = 0x18
-REST2_RATE_U = 0x19
-REST2_DSHFT = 0x1A
-REST3_RATE_L = 0x1B
-REST3_RATE_U = 0x1C
-OBSERVATION = 0x24
-DATA_OUT_L = 0x25
-DATA_OUT_U = 0x26
-RAW_DATA_DUMP = 0x29
-SROM_ID = 0x2A
-MIN_SQ_RUN = 0x2B
-RAW_DATA_THRSH = 0x2C
-CNFG5 = 0x2F
-POWER_UP_RESET = 0x3A
-SHUTDOWN = 0x3B
-INV_PROD_ID = 0x3F
-LIFT_CUTOFF_TUNE3 = 0x41
-ANGLE_SNAP = 0x42
-LIFT_CUTOFF_TUNE1 = 0x4A
-MOT_BURST = 0x50
-LIFT_CUTOFF_TUNE_TIMEOUT = 0x58
-LIFT_CUTOFF_TUNE_MIN_LENGTH = 0x5A
-SROM_LOAD_BURST = 0x62
-LIFT_CONFIG = 0x63
-RAW_DATA_BURST = 0x64
-LIFT_CUTOFF_TUNE2 = 0x65
+PROD_ID = np.ubyte(0x00)
+REV_ID = np.ubyte(0x01)
+MOTION = np.ubyte(0x02)
+DXL = np.ubyte(0x03)
+DXH = np.ubyte(0x04)
+DYL = np.ubyte(0x05)
+DYH = np.ubyte(0x06)
+SQUAL = np.ubyte(0x07)
+RAW_DATA_SUM = np.ubyte(0x08)
+MAX_RAW_DATA = np.ubyte(0x09)
+MIN_RAW_DATA = np.ubyte(0x0A)
+SHUTTER_L = np.ubyte(0x0B)
+SHUTTER_U = np.ubyte(0x0C)
+CNTRL = np.ubyte(0x0D)
+CNFG1 = np.ubyte(0x0F)
+CNFG2 = np.ubyte(0x10)
+ANGLE_TUNE = np.ubyte(0x11)
+FRAME_CAPTURE = np.ubyte(0x12)
+SROM_EN = np.ubyte(0x13)
+RUN_DSHFT = np.ubyte(0x14)
+REST1_RATE_L = np.ubyte(0x15)
+REST1_RATE_U = np.ubyte(0x16)
+REST1_DSHFT = np.ubyte(0x17)
+REST2_RATE_L = np.ubyte(0x18)
+REST2_RATE_U = np.ubyte(0x19)
+REST2_DSHFT = np.ubyte(0x1A)
+REST3_RATE_L = np.ubyte(0x1B)
+REST3_RATE_U = np.ubyte(0x1C)
+OBSERVATION = np.ubyte(0x24)
+DATA_OUT_L = np.ubyte(0x25)
+DATA_OUT_U = np.ubyte(0x26)
+RAW_DATA_DUMP = np.ubyte(0x29)
+SROM_ID = np.ubyte(0x2A)
+MIN_SQ_RUN = np.ubyte(0x2B)
+RAW_DATA_THRSH = np.ubyte(0x2C)
+CNFG5 = np.ubyte(0x2F)
+POWER_UP_RESET = np.ubyte(0x3A)
+SHUTDOWN = np.ubyte(0x3B)
+INV_PROD_ID = np.ubyte(0x3F)
+LIFT_CUTOFF_TUNE3 = np.ubyte(0x41)
+ANGLE_SNAP = np.ubyte(0x42)
+LIFT_CUTOFF_TUNE1 = np.ubyte(0x4A)
+MOT_BURST = np.ubyte(0x50)
+LIFT_CUTOFF_TUNE_TIMEOUT = np.ubyte(0x58)
+LIFT_CUTOFF_TUNE_MIN_LENGTH = np.ubyte(0x5A)
+SROM_LOAD_BURST = np.ubyte(0x62)
+LIFT_CONFIG = np.ubyte(0x63)
+RAW_DATA_BURST = np.ubyte(0x64)
+LIFT_CUTOFF_TUNE2 = np.ubyte(0x65)
 #endregion
 #_____________________________________________
 
@@ -378,6 +379,7 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #region
 #MAX_SCLK_FR = 2000000
 MAX_SCLK_FR = 1000000
+#! Looking at scope, 2 MHz looks too choppy; SCLK doesn't settle; unnecissarily fast?
 #//MAX_SCLK_FR = 5000
 T_SCLK_NCS_W = 35 #µs
 T_S_WW_WR = 180/1000000 #s
@@ -455,18 +457,31 @@ print("SPI 0,0 is on")
 #_____________________________________________
 
 def pmw_WriteReg(message):
-  regAdress = (message[0] | 0x08)
+  regAdress = (message[0] | np.ubyte(0x08))
   spi.xfer([regAdress, message[1]], MAX_SCLK_FR, T_SCLK_NCS_W)
   time.sleep(DELAY_AFTER_WRITE)
+
+def testTransmittion(message):
+  #spi.xfer(message)
+  spi.writebytes(message)
 
 def mouse_reset_shutdown():
     #empty message - write 0x00 to shutdown register
       #data should have no effect
     emptyMessage = array('B', [SHUTDOWN, 0x00])
 
+testCount = 0
 try:
   while(True):
-    pmw_WriteReg(array('B', [SHUTDOWN, 0xB6]))
+    #pmw_WriteReg(array('B', [SHUTDOWN, 0xB6]))
+    #TEST
+    transmissionStartT = time.monotonic_ns()
+    testTransmittion([0x12])
+    transmissionEndT = time.monotonic_ns()
+    transmissionTime = transmissionEndT - transmissionStartT
+    if(testCount < 6):
+      print(transmissionTime)
+    testCount+=1
 
 finally:
   spi.close()

@@ -411,7 +411,9 @@ spi.configure(baudrate=1000000, phase=1, polarity=1)
 
 #More Setup Parameters
 DELAY_TIME = 300/1000000
+#CPI = 3200
 CPI = 1600
+
 initComplete = False
 
 def pmw_WriteReg(addr, data):
@@ -455,9 +457,11 @@ def performStartup():
     DELAY_CS_TOGGLE2 = 40/1000000
     DELAY_REBOOT = 50/1000000
 
+    displayRegisters()
+
     CS.value = True
     CS.value = False
-    time.sleep(DELAY_CS_TOGGLE)
+    #time.sleep(DELAY_CS_TOGGLE)
     CS.value = True
 
     shutdownMSG = bytearray([SHUTDOWN, 0xB6])
@@ -493,6 +497,8 @@ def performStartup():
     readByte = pmw_ReadReg(regAddr[0])
     print('DYH: ', hex(readByte[0]))
 
+    #time.sleep(10)
+
     pmw_uploadFW()
 
     time.sleep(DELAY_AFTER_FW)
@@ -507,12 +513,22 @@ def performStartup():
     readByte = pmw_ReadReg(regAddr[0])
     print('PROD ID: ', hex(readByte[0]))
 
+    regAddr = bytearray([DATA_OUT_U])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DOU: ', hex(readByte[0]))
+
+    regAddr = bytearray([DATA_OUT_U])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DOU: ', hex(readByte[0]))
+
+    print('Mouse Sensor Initialized')
+
 
 
 def pmw_uploadFW():
     print("uploading Firmware...")
 
-    FW_DELAY = 10/1000000
+    FW_DELAY = 10/1000
     FW_DELAY2 = 15/1000000
     FW_DELAY3 = 20/1000000
 
@@ -522,7 +538,13 @@ def pmw_uploadFW():
     message = bytearray([SROM_EN, 0x1D])
     pmw_WriteReg(message[0], message[1])
 
+    time.sleep(FW_DELAY)
+
+    message = bytearray([SROM_EN, 0x18])
+    pmw_WriteReg(message[0], message[1])
+
     message = bytearray([(SROM_LOAD_BURST | 0x80)])
+    #print(message)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(message)
@@ -531,7 +553,10 @@ def pmw_uploadFW():
     for byte in SROM:
         spi.write(bytes([byte]))
         time.sleep(FW_DELAY2)
+        #print(hex(byte))
+        #time.sleep(0.01)
     
+    time.sleep(FW_DELAY3)
     regAddr = bytearray([SROM_ID])
     readByte = pmw_ReadReg(regAddr[0])
     print('SROM ID: ', hex(readByte[0]))
@@ -589,35 +614,90 @@ def displayRegisters():
 
 def getDeltas():
     burstBuffer = bytearray(12)
-    regAddr = bytearray([MOT_BURST])
-    burstBuffer = pmw_ReadMotionBurst(regAddr[0])
+    regAddr = bytearray([(MOT_BURST & 0x7f)])
+
+    #message = bytearray([MOT_BURST, 0x00])
+    #pmw_WriteReg(message[0], message[1])
+    CS.value = False
+    spi.write(regAddr)
+    time.sleep(T_SCLK_NCS_W/1000000)
+
+    #burstBuffer = pmw_ReadMotionBurst(regAddr[0])
+
+    spi.readinto(burstBuffer)
+
+    time.sleep(1/1000000)
     
     motionF = (burstBuffer[0] & 0x80) > 0
 
     #print(motionF)
 
-    delta_xL = bytearray([burstBuffer[2]])
+    delta_xL = burstBuffer[2]
 
     #print(delta_xL)
 
 
-    delta_xH = bytearray([burstBuffer[3]])
-    delta_yL = bytearray([burstBuffer[4]])
-    delta_yH = bytearray([burstBuffer[5]])
+    delta_xH = burstBuffer[3]
+    delta_yL = burstBuffer[4]
+    delta_yH = burstBuffer[5]
 
-    deltaX = (delta_xH[0] << 8) | delta_xL[0]
-    deltaY = (delta_yH[0] << 8) | delta_yL[0]
+    deltaX = (delta_xH << 8) | delta_xL
+    deltaY = (delta_yH << 8) | delta_yL
+
+    CS.value = True
+
+    
+
+    if(motionF):
+        #print(delta_xL)
+        print('OBSERVATION: ', hex(burstBuffer[1]))
+        print('SQUAL: ', burstBuffer[6])
+
 
     return [motionF, deltaX, deltaY]
+
+
+def checkSROM():
+    FW_DELAY = 10/1000
+    OBS_DELAY = 800/1000
+
+
+
+    message = bytearray([OBSERVATION, 0x00])
+    pmw_WriteReg(message[0], message[1])
+    time.sleep(OBS_DELAY)
+
+    regAddr = bytearray([OBSERVATION])
+    readByte = pmw_ReadReg(regAddr[0])
+    good = ((readByte[0] & 0x80) > 1)
+    print('SROM RUNNING? = ', good)
+
+
+    message = bytearray([SROM_EN, 0x15])
+    pmw_WriteReg(message[0], message[1])
+    time.sleep(FW_DELAY)
+
+    regAddr = bytearray([DATA_OUT_U])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DOU: ', hex(readByte[0]))
+
+    regAddr = bytearray([DATA_OUT_L])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('DOL: ', hex(readByte[0]))
+
+
 
 
 def setUp():
     performStartup()
     time.sleep(1)
     displayRegisters()
+    checkSROM()
     initComplete = True
 
 setUp()
+print('WTF')
+
 try:
     
     while(True):
@@ -626,7 +706,8 @@ try:
         
         if(motion_deltaXY[0]):
             print('dX: ', motion_deltaXY[1], '   dY: ', motion_deltaXY[2])
-            time.sleep(5)
+            #time.sleep(5)
+            checkSROM()
 
         
         

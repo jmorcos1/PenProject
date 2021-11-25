@@ -89,7 +89,7 @@ while len(factorScale) < nFactors:
 
 print(factorScale)
 
-thresholdScale = dict(zip(np.around(np.linspace(sThresh, 3.88, 14), 3), np.around(factorScale, 2)))
+thresholdScale = dict(zip(np.around(np.linspace(minThresh, 3.88, 14), 3), np.around(factorScale, 2)))
 
 print(thresholdScale)
 

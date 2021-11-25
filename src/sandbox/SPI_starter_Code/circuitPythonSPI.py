@@ -433,7 +433,7 @@ def pmw_WriteReg(addr, data):
     
 
 
-    regAddress = (addr | 0x08)
+    regAddress = (np.ubyte(addr) | 0x08)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(bytes([regAddress, data]))
@@ -445,6 +445,117 @@ def pmw_WriteReg(addr, data):
         
     
     time.sleep(T_SCLK_NCS_W/1000000)
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+def pmw_shutDown():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0xBB, 0xB6]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+def pmw_powerUp():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0xBA, 0x5A]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+
+def pmw_unRest():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x90, 0x00]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+def pmw_initSROM():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x93, 0x1D]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+
+def pmw_startSROM_DL():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x93, 0x18]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
     CS.value = True
     time.sleep(DELAY_AFTER_WRITE)
 
@@ -505,17 +616,28 @@ def performStartup():
     #time.sleep(DELAY_CS_TOGGLE)
     CS.value = True
 
+
+
+    pmw_shutDown()
+    """
     shutdownMSG = bytes([SHUTDOWN, 0xB6])
-    pmw_WriteReg(shutdownMSG[0], shutdownMSG[1])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    """
     time.sleep(DELAY_TIME)
+    
+
 
     CS.value = False
     time.sleep(DELAY_CS_TOGGLE2)
     CS.value = True
     time.sleep(DELAY_CS_TOGGLE2)
 
+
+    pmw_powerUp()
+    """
     resetMSG = bytes([POWER_UP_RESET, 0x5A])
-    pmw_WriteReg(resetMSG[0], resetMSG[1])
+    pmw_WriteReg(np.ubyte(resetMSG[0]), np.ubyte(resetMSG[1]))
+    """
     time.sleep(DELAY_REBOOT)
 
     regAddr = bytearray([MOTION])
@@ -580,18 +702,36 @@ def pmw_uploadFW():
     FW_DELAY3 = 20/1000000
     FW_DELAY4 = 200/1000000
 
+    
+    pmw_unRest()
+    """
     message = bytes([CNFG2, 0x00])
-    pmw_WriteReg(message[0], message[1])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
 
+
+
+    pmw_initSROM()
+    """
     message = bytes([SROM_EN, 0x1D])
-    pmw_WriteReg(message[0], message[1])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
+
+
+
 
     time.sleep(FW_DELAY)
     #time.sleep(10)
 
+    
+    pmw_startSROM_DL()
+    """
     message = bytes([SROM_EN, 0x18])
-    pmw_WriteReg(message[0], message[1])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
 
+    
+    
     message = bytearray([(SROM_LOAD_BURST | 0x80)])
     #print(message)
     CS.value = False

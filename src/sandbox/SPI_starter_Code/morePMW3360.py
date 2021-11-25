@@ -838,13 +838,15 @@ deltaC = 0
 def getDeltas():
     global deltaC
     burstBuffer = bytearray(12)
-    regAddr = bytearray([(MOT_BURST & 0x7f)])
+    
+    #regAddr = bytearray([(MOT_BURST & 0x7f)])
+    #regAddr = bytearray([(MOT_BURST | 0x80)])
     #regAddr = bytearray([MOT_BURST])
 
     #message = bytearray([MOT_BURST, 0x00])
     #pmw_WriteReg(message[0], message[1])
     CS.value = False
-    spi.write(regAddr)
+    spi.write(bytearray([(MOT_BURST | 0x80)]))
     if(deltaC < 3):
         #print('DEBUG6', regAddr)
         deltaC += 1

@@ -4,7 +4,6 @@ import digitalio
 import time
 import numpy as np
 
-
 """
 SENSOR INFO:
 ----------------------------------------------------
@@ -13,25 +12,26 @@ SENSOR INFO:
 -On-Board Power regulator - Compatable with 3.3V or 5V input
 *Use 3.3v (PI pin 1)
 
-*SERIAL CLOCK
+*PMW - SPI info
 -Max. Serial Port Clock Frequency: 2 MHz
--CPOL = 1 //SCKL input to chip is inverted
-         -//Invert the polarity of of SCLK output from MCU
--CPHA = 1 //Cycle begins and ends on falling edge of SCKL input to chip
--->So SPI Mode is 3 (b11)
+-NCS is Active Low
+-SPI Mode is 3 (b11)
 
 -Speed of mouse sensor movement: Can handle up to 250 inches/second
 -Up to 50 g of acceleration
 
 *See data sheet for timing details
 *see datasheet for register info
+TODO: see data sheet for CPI, and delta value meanings, also SQUAL
+    *and check out lift - angle - etc.
+    ?what else is useful (READ datasheet even more)
 #endregion
 ____________________________________________________
 """
 
 #*Sensor Firmware
 #--------------------------------------
-#SROM = bytearray([0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1d, 0xb8, 0xf2, 0x66, 0x4e, 
+#//SROM = bytearray([0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1d, 0xb8, 0xf2, 0x66, 0x4e, 
 SROM = np.array([0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1d, 0xb8, 0xf2, 0x66, 0x4e, 
         0xff, 0x5d, 0x19, 0xb0, 0xc2, 0x04, 0x69, 0x54, 0x2a, 0xd6, 0x2e, 0xbf, 0xdd, 0x19, 0xb0, 
         0xc3, 0xe5, 0x29, 0xb1, 0xe0, 0x23, 0xa5, 0xa9, 0xb1, 0xc1, 0x00, 0x82, 0x67, 0x4c, 0x1a, 
@@ -306,19 +306,6 @@ SROM = np.array([0x01, 0x04, 0x8e, 0x96, 0x6e, 0x77, 0x3e, 0xfe, 0x7e, 0x5f, 0x1
         0x74, 0x4b, 0x14, 0xaa, 0xb7, 0xec, 0x3b, 0xd5, 0x28, 0xd2, 0x07, 0x6d, 0x39, 0xd1, 0x20, 
         0xc2, 0xe7, 0x4c, 0x1a, 0x97, 0x8d, 0x98, 0xb2, 0xc7, 0x0c, 0x59, 0x28, 0xf3, 0x9b], dtype=np.ubyte)
 FIRMWARE_LENGTH = 4094
-
-#foo = np.array([0x23, 0x20], dtype=np.ubyte)
-
-#print(SROM)
-#SROM
-
-#TEST
-"""
-for byte in SROM:
-    print(hex(byte))
-
-print(len(SROM))
-"""
 #______________________________________
 
 #*Sensor Registers
@@ -381,9 +368,7 @@ LIFT_CUTOFF_TUNE2 = 0x65
 #region
 #//MAX_SCLK_FR = 2000000
 MAX_SCLK_FR = 1000000
-#//MAX_SCLK_FR = 500000
 #! Looking at scope, 2 MHz looks too choppy; SCLK doesn't settle; unnecissarily fast?
-#//MAX_SCLK_FR = 5000
 T_SCLK_NCS_W = 35 #µs
 T_NCS_SCLK = 120 #ns
 T_SCLK_NCS_R = 120 #ns
@@ -392,7 +377,6 @@ DELAY_AFTER_WRITE = T_S_WW_WR - T_SCLK_NCS_W/1000000
 T_SRR_RW = 20 #µs
 T_SRAD = 160 #µs
 DELAY_AFTER_READ = T_SRR_RW/1000000 - T_SCLK_NCS_R/1000000000
-
 #endregion
 #_____________________________________________
 
@@ -404,40 +388,174 @@ DELAY_AFTER_READ = T_SRR_RW/1000000 - T_SCLK_NCS_R/1000000000
 CS = digitalio.DigitalInOut(board.D25)
 CS.direction = digitalio.Direction.OUTPUT
 CS.value = True
+#note - CS is toggled manually to start and end data transfer
 
+#*connect to SPI device - create object and lock the bus
 spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
 while not spi.try_lock():
     pass
 spi.configure(baudrate=1000000, phase=1, polarity=1)
 
-
 #mouseSensor - Setup
 #TODO: Set a MOTION Pin on board
+#?not necissary, can just read motion during burst
+#TODO: deal with wires
 #endregion
 #_____________________________________________
 
 #More Setup Parameters
-DELAY_TIME = 300/1000000
+DELAY_TIME = 300/1000000 #just a delay of 300 µs
+#*CPI setting
+#?figure this out
+#!
 #CPI = 3200
 CPI = 1600
 
 initComplete = False
 
+
 def pmw_WriteReg(addr, data):
-    regAddress = (addr | 0x08)
+    #input: 1 register address byte, 1 data byte
+    #-performs a write to a given register
+    #-data and addr should be unsigned bytes
+    regAddress = (np.ubyte(addr) | 0x08)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(bytes([regAddress, data]))
+    #write function takes in: buffer - a bytearray
+
+
+        
+    
     time.sleep(T_SCLK_NCS_W/1000000)
     CS.value = True
     time.sleep(DELAY_AFTER_WRITE)
 
+def pmw_shutDown():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0xBB, 0xB6]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+def pmw_powerUp():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0xBA, 0x5A]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+
+def pmw_unRest():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x90, 0x00]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+def pmw_initSROM():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x93, 0x1D]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
+
+
+def pmw_startSROM_DL():
+    """
+    shutdownMSG = bytes([SHUTDOWN, 0xB6])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    time.sleep(DELAY_TIME)
+    """
+    
+    
+    #regAddress = (addr | 0x08)
+    
+    CS.value = False
+    time.sleep(T_NCS_SCLK/1000000000)
+    
+    #spi.write(bytes([regAddress, data]))
+    
+    spi.write(bytearray([0x93, 0x18]))
+    time.sleep(T_SCLK_NCS_W/1000000)        
+    
+    CS.value = True
+    time.sleep(DELAY_AFTER_WRITE)
+
 def pmw_ReadReg(addr):
+
+    global readRegC
+
     regAddress = (addr & 0x7F)
     receive = bytearray(1)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(bytes([regAddress]))
+
+    if((readRegC < 10) or testing):
+        #print('DEBUG2', bytes([regAddress]))
+        readRegC = readRegC + 1
+
     time.sleep(T_SRAD/1000000)
     spi.readinto(receive)
     time.sleep(T_SCLK_NCS_R/1000000000)
@@ -445,12 +563,22 @@ def pmw_ReadReg(addr):
     time.sleep(DELAY_AFTER_READ)
     return receive
 
+readMOTB_C = 0
 def pmw_ReadMotionBurst(addr):
+    global readMOTB_C
+
     regAddress = (addr & 0x7F)
     receive = bytearray(12)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
     spi.write(bytes([regAddress]))
+    
+    if(readMOTB_C < 3):
+        #print('DEBUG3', bytes([regAddress]))
+        readMOTB_C += 1
+
+
+
     time.sleep(T_SRAD/1000000)
     spi.readinto(receive)
     time.sleep(T_SCLK_NCS_R/1000000000)
@@ -464,24 +592,35 @@ def performStartup():
     DELAY_CS_TOGGLE2 = 40/1000000
     DELAY_REBOOT = 50/1000000
 
-    displayRegisters()
+    #displayRegisters()
 
     CS.value = True
     CS.value = False
     #time.sleep(DELAY_CS_TOGGLE)
     CS.value = True
 
+
+
+    pmw_shutDown()
+    """
     shutdownMSG = bytes([SHUTDOWN, 0xB6])
-    pmw_WriteReg(shutdownMSG[0], shutdownMSG[1])
+    pmw_WriteReg(np.ubyte(shutdownMSG[0]), np.ubyte(shutdownMSG[1]))
+    """
     time.sleep(DELAY_TIME)
+    
+
 
     CS.value = False
     time.sleep(DELAY_CS_TOGGLE2)
     CS.value = True
     time.sleep(DELAY_CS_TOGGLE2)
 
+
+    pmw_powerUp()
+    """
     resetMSG = bytes([POWER_UP_RESET, 0x5A])
-    pmw_WriteReg(resetMSG[0], resetMSG[1])
+    pmw_WriteReg(np.ubyte(resetMSG[0]), np.ubyte(resetMSG[1]))
+    """
     time.sleep(DELAY_REBOOT)
 
     regAddr = bytearray([MOTION])
@@ -532,9 +671,13 @@ def performStartup():
 
 
 
+fwWC = 0
+
 def pmw_uploadFW():
+    global fwWC
+
     print("uploading Firmware...")
-    print(type(SROM))
+    print(type(SROM.data))
 
 
     FW_DELAY = 10/1000
@@ -542,23 +685,47 @@ def pmw_uploadFW():
     FW_DELAY3 = 20/1000000
     FW_DELAY4 = 200/1000000
 
-    message = bytearray([CNFG2, 0x00])
-    pmw_WriteReg(message[0], message[1])
+    
+    pmw_unRest()
+    """
+    message = bytes([CNFG2, 0x00])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
 
-    message = bytearray([SROM_EN, 0x1D])
-    pmw_WriteReg(message[0], message[1])
+
+
+    pmw_initSROM()
+    """
+    message = bytes([SROM_EN, 0x1D])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
+
+
+
 
     time.sleep(FW_DELAY)
     #time.sleep(10)
 
-    message = bytearray([SROM_EN, 0x18])
-    pmw_WriteReg(message[0], message[1])
+    
+    pmw_startSROM_DL()
+    """
+    message = bytes([SROM_EN, 0x18])
+    pmw_WriteReg(np.ubyte(message[0]), np.ubyte(message[1]))
+    """
 
+    
+    
     message = bytearray([(SROM_LOAD_BURST | 0x80)])
     #print(message)
     CS.value = False
     time.sleep(T_NCS_SCLK/1000000000)
+
     spi.write(message)
+
+    if(fwWC < 10):
+        #print('DEBUG4', message)
+        fwWC+=1
+
     time.sleep(FW_DELAY2)
 
     """
@@ -575,8 +742,15 @@ def pmw_uploadFW():
     #spi.write(bytes(SROM))
     #spi.write(SROM.data)
 
+    bC = 0
+
     for byte in SROM.data:
         spi.write([byte])
+        
+        if(bC < 3):
+            #print('DEBUG5', [byte])
+            bC+=1
+        
         time.sleep(FW_DELAY2)
         #print(hex(byte))
         #time.sleep(0.01)
@@ -642,15 +816,23 @@ def displayRegisters():
     readByte = pmw_ReadReg(regAddr[0])
     print('DXH: ', hex(readByte[0]))
 
+deltaC = 0
 
 def getDeltas():
+    global deltaC
     burstBuffer = bytearray(12)
-    regAddr = bytearray([(MOT_BURST & 0x7f)])
+    
+    #regAddr = bytearray([(MOT_BURST & 0x7f)])
+    #regAddr = bytearray([(MOT_BURST | 0x80)])
+    #regAddr = bytearray([MOT_BURST])
 
     #message = bytearray([MOT_BURST, 0x00])
     #pmw_WriteReg(message[0], message[1])
     CS.value = False
-    spi.write(regAddr)
+    spi.write(bytearray([(MOT_BURST | 0x80)]))
+    if(deltaC < 3):
+        #print('DEBUG6', regAddr)
+        deltaC += 1
     time.sleep(T_SCLK_NCS_W/1000000)
 
     #burstBuffer = pmw_ReadMotionBurst(regAddr[0])
@@ -721,9 +903,12 @@ def checkSROM():
 
 
 def setUp():
+    global testing
     performStartup()
     time.sleep(1)
+    testing = True
     displayRegisters()
+    testing = False
     checkSROM()
     initComplete = True
 

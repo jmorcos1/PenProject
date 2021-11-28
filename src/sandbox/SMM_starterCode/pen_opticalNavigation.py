@@ -433,8 +433,11 @@ spi.configure(baudrate=1000000, phase=1, polarity=1)
 #More Setup Parameters
 DELAY_TIME = 300/1000000 #just a delay of 300 µs
 #*CPI setting
+#range is 100-12000
 #?figure this out
 #!
+#CPI = 10000
+#CPI = 6400
 #CPI = 3200
 CPI = 1600
 
@@ -631,14 +634,61 @@ def getDeltas():
     spi.readinto(burstBuffer)
     time.sleep(1/1000000)
     motionF = (burstBuffer[0] & 0x80) > 0
+    """
     delta_xL = burstBuffer[2]
     delta_xH = burstBuffer[3]
     delta_yL = burstBuffer[4]
     delta_yH = burstBuffer[5]
     deltaX = (delta_xH << 8) | delta_xL
     deltaY = (delta_yH << 8) | delta_yL
+    """
+    #hmmm
+
+    """
+    delta_xL = np.ubyte(burstBuffer[2])
+    delta_xH = np.ubyte(burstBuffer[3])
+    delta_yL = np.ubyte(burstBuffer[4])
+    delta_yH = np.ubyte(burstBuffer[5])
+    deltaX = np.short((delta_xH << 8) | delta_xL)
+    deltaY = np.short((delta_yH << 8) | delta_yL)
     surfaceQ_in_numFeatures = 8*burstBuffer[6]
     CS.value = True
+    """
+
+    delta_xL = burstBuffer[2]
+    delta_xH = burstBuffer[3]
+    delta_yL = burstBuffer[4]
+    delta_yH = burstBuffer[5]
+
+    
+
+
+
+    deltaX = (delta_xH << 8) | delta_xL
+    deltaY = (delta_yH << 8) | delta_yL
+    
+    
+    if(deltaX & (1 << 15)) != 0:
+        deltaX = deltaX - (1 << 16)
+    
+    if(deltaY & (1 << 15)) != 0:
+        deltaY = deltaY - (1 << 16)
+    
+
+    
+    surfaceQ_in_numFeatures = 8*burstBuffer[6]
+    CS.value = True
+
+    
+
+    print('dX low:', delta_xL, bin(delta_xL))
+    print('dX high:', delta_xH, bin(delta_xH))
+    print('dY low:', delta_yL, bin(delta_yL))
+    print('dY high:', delta_yH, bin(delta_yH))
+    print('dX:', deltaX)
+    print('dY:', deltaY)
+
+
     return [motionF, deltaX, deltaY, surfaceQ_in_numFeatures]
 
 
@@ -663,6 +713,28 @@ def checkSROM():
     regAddr = bytearray([DATA_OUT_L])
     readByte = pmw_ReadReg(regAddr[0])
     print('DOL: ', hex(readByte[0]))
+
+
+def pmw_readMotion():
+    #get accumulated motion (deltas) - not using burst
+    message = bytes([MOTION, 0x00])
+    pmw_WriteReg(message[0], message[1])
+
+    regAddr = bytes([MOTION])
+    readByte = pmw_ReadReg(regAddr[0])
+
+    if(readByte & 0x80 > 0):
+        regAddr = bytes([DXL])
+        deltaX_L = pmw_ReadReg(regAddr[0])
+        regAddr = bytes([DXH])
+        deltaX_H = pmw_ReadReg(regAddr[0])
+        regAddr = bytes([DYL])
+        deltaY_L = pmw_ReadReg(regAddr[0])
+        regAddr = bytes([DYH])
+        deltaY_H = pmw_ReadReg(regAddr[0])
+    
+    return [deltaX_L[0], deltaX_H[0], deltaY_L[0], deltaY_H[0]]
+
 
 
 def setUp():
@@ -692,12 +764,19 @@ try:
     else:
         print('WTF')
     while(True):
+        """
         motion_dX_dY_squal = getDeltas()
         if(motion_dX_dY_squal[0]):
             print('dX: ', motion_dX_dY_squal[1], '   dY: ', motion_dX_dY_squal[2])
             print('Surface Qual. (Num. of features): ', motion_dX_dY_squal[3])
             print('\n\n')
-            #time.sleep(5)
+            #time.sleep(0.2)
+        """
+        
+        deltaregisters = pmw_readMotion()
+        print('dxH   |   dxL   |   dyH   |   dyL')
+        print(bin(deltaregisters[1]), ' | ', bin(deltaregisters[0]), ' | ', bin(deltaregisters[3]), ' | ', bin(deltaregisters[2]))
+
         #delay to limit read rate
         time.sleep(800/1000000)
 finally:

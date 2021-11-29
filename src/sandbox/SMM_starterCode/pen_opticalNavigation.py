@@ -435,11 +435,12 @@ DELAY_TIME = 300/1000000 #just a delay of 300 µs
 #*CPI setting
 #range is 100-12000
 #?figure this out
-#!
-#CPI = 10000
+#! Max is 12000
+CPI = 10000
 #CPI = 6400
 #CPI = 3200
-CPI = 1600
+#CPI = 1600
+#CPI = 5000 #default
 
 
 def pmw_WriteReg(addr, data):
@@ -626,7 +627,7 @@ def setCPI(cpiVal):
   print('set CPI to: ', cpiVal)
 
 
-def getDeltas():
+def getDeltas_old():
     burstBuffer = bytearray(12)
     CS.value = False
     spi.write(bytes([(MOT_BURST | 0x80)]))
@@ -691,6 +692,61 @@ def getDeltas():
 
     return [motionF, deltaX, deltaY, surfaceQ_in_numFeatures]
 
+def getDeltas():
+
+    message = bytes([MOT_BURST, 0x00])
+    pmw_WriteReg(message[0], message[1])
+    CS.value = False
+    burstBuffer = bytearray(12)
+    spi.write(bytes([MOT_BURST]))
+    time.sleep(T_SCLK_NCS_W/1000000)
+    spi.readinto(burstBuffer)
+    time.sleep(1/1000000)
+    motionF = (burstBuffer[0] & 0x80) > 0
+    liftF = (burstBuffer[0] & 0x08) > 0
+
+    delta_xL = np.ubyte(burstBuffer[2])
+    delta_xH = np.ubyte(burstBuffer[3])
+    delta_yL = np.ubyte(burstBuffer[4])
+    delta_yH = np.ubyte(burstBuffer[5])
+    deltaX = np.short((delta_xH << 8) | delta_xL)
+    deltaY = np.short((delta_yH << 8) | delta_yL)
+    surfaceQ_in_numFeatures = 8*burstBuffer[6]
+    CS.value = True
+    time.sleep(1/1000000)
+
+    """
+    if(motionF):
+        print('dX low:', delta_xL, bin(delta_xL))
+        print('dX high:', delta_xH, bin(delta_xH))
+        print('dY low:', delta_yL, bin(delta_yL))
+        print('dY high:', delta_yH, bin(delta_yH))
+        print('dX:', deltaX)
+        print('dY:', deltaY)
+    """
+    return [motionF, deltaX, deltaY, surfaceQ_in_numFeatures, liftF]
+
+
+def checkLiftConf():
+    regAddr = bytes([LIFT_CONFIG])
+    readByte = pmw_ReadReg(regAddr[0])
+    print('Lift Config Setting: ', hex(readByte[0]))
+
+def setLiftConf():
+    regAddr = bytes([LIFT_CONFIG])
+    readByte = pmw_ReadReg(regAddr[0])
+
+    print(hex(readByte[0]))
+
+    newSetting = (readByte[0] | 0x03)
+
+    print(hex(newSetting))
+
+    message = bytes([LIFT_CONFIG, newSetting])
+    pmw_WriteReg(message[0], message[1])
+    time.sleep(DELAY_TIME)
+    
+
 
 def checkSROM():
     FW_DELAY = 10/1000
@@ -714,6 +770,10 @@ def checkSROM():
     readByte = pmw_ReadReg(regAddr[0])
     print('DOL: ', hex(readByte[0]))
 
+    checkLiftConf()
+    setLiftConf()
+    checkLiftConf()
+
 
 def pmw_readMotion():
     #get accumulated motion (deltas) - not using burst
@@ -723,7 +783,7 @@ def pmw_readMotion():
     regAddr = bytes([MOTION])
     readByte = pmw_ReadReg(regAddr[0])
 
-    if(readByte & 0x80 > 0):
+    if(readByte[0] & 0x80 > 0):
         regAddr = bytes([DXL])
         deltaX_L = pmw_ReadReg(regAddr[0])
         regAddr = bytes([DXH])
@@ -732,8 +792,9 @@ def pmw_readMotion():
         deltaY_L = pmw_ReadReg(regAddr[0])
         regAddr = bytes([DYH])
         deltaY_H = pmw_ReadReg(regAddr[0])
-    
-    return [deltaX_L[0], deltaX_H[0], deltaY_L[0], deltaY_H[0]]
+        return [deltaX_L[0], deltaX_H[0], deltaY_L[0], deltaY_H[0]]
+    else:
+        return [0, 0, 0, 0]
 
 
 
@@ -764,18 +825,20 @@ try:
     else:
         print('WTF')
     while(True):
-        """
-        motion_dX_dY_squal = getDeltas()
-        if(motion_dX_dY_squal[0]):
-            print('dX: ', motion_dX_dY_squal[1], '   dY: ', motion_dX_dY_squal[2])
-            print('Surface Qual. (Num. of features): ', motion_dX_dY_squal[3])
+        
+        motion_dX_dY_squal_lift = getDeltas()
+        if(motion_dX_dY_squal_lift[0]):
+            print('chip lifted? : ', motion_dX_dY_squal_lift[4])
+            print('dX: ', motion_dX_dY_squal_lift[1], '   dY: ', motion_dX_dY_squal_lift[2])
+            print('Surface Qual. (Num. of features): ', motion_dX_dY_squal_lift[3])
             print('\n\n')
             #time.sleep(0.2)
-        """
         
+        """
         deltaregisters = pmw_readMotion()
         print('dxH   |   dxL   |   dyH   |   dyL')
         print(bin(deltaregisters[1]), ' | ', bin(deltaregisters[0]), ' | ', bin(deltaregisters[3]), ' | ', bin(deltaregisters[2]))
+        """
 
         #delay to limit read rate
         time.sleep(800/1000000)

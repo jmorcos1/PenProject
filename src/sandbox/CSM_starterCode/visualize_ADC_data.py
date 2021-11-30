@@ -77,8 +77,8 @@ def sampleADC():
     return math.floor(sum(data)/len(data))
 
 nFactors = 14
-sFactor = 0.3
-minThresh = 3.75
+sFactor = 0.5
+minThresh = 3.781
 expectedRange = 0.18
 maxThresh = minThresh + expectedRange 
 factorScale = np.array([sFactor])
@@ -89,7 +89,7 @@ while len(factorScale) < nFactors:
 
 print(factorScale)
 
-thresholdScale = dict(zip(np.around(np.linspace(minThresh, 3.88, 14), 3), np.around(factorScale, 2)))
+thresholdScale = dict(zip(np.around(np.linspace(minThresh, maxThresh, nFactors), 3), np.around(factorScale, 2)))
 
 print(thresholdScale)
 

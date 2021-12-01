@@ -68,13 +68,25 @@ def onmove(self, fun, add=None):
             fun(self.cv.canvasx(event.x) / self.xscale, -self.cv.canvasy(event.y) / self.yscale)
         self.cv.bind('<Motion>', eventfun, add)
 
-screen = Screen()
-screen.setup(500, 500, startx=10, starty=2)
-screen.screensize(1900, 900)
-screen.title("thinkPen Drawing")
+initialPenSize = 2
+initialSize = initialPenSize/5
 
-yertle = Turtle('turtle')
+screen = Screen()
+screen.setup(400, 300, startx=-10, starty=2)
+screen.screensize(500, 500)
+screen.title("Mouse Drawing")
+
+yertle = Turtle('arrow')
 yertle.speed('fastest')
+
+yertle.resizemode('user')
+yertle.shapesize(initialSize*0.2, initialSize*0.2*3)
+yertle.pensize(initialPenSize*0.2)
+
+yertle.home()
+yertle.goto(-50, 50)
+yertle.speed('fastest')
+yertle.fillcolor('green')
 
 state = MOVING
 

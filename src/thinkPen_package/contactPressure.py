@@ -62,18 +62,18 @@ def getContact_getSize():
     return [inContact, lwFactor]
 
 def calibrateMin():
-    print('lift the pen off the surface for 5 seconds')
+    print('Calibrating - do not touch')
     time.sleep(3)
     v_digital = np.uint16(sampleADC())
     logV_dig = math.log10(v_digital)
     print('done calibrating')
-    return logV_dig*1.0075
+    return logV_dig*1.008
 
 
 
-
+sFactorIn = 0.2
 nFactors = 14
-sFactor = 0.2
+sFactor = sFactorIn
 #minThresh = 3.781
 minThresh = calibrateMin()
 expectedRange = 0.18
@@ -85,4 +85,4 @@ while len(factorScale) < nFactors:
     factorScale = np.append(factorScale, sFactor)
 
 thresholdScale = dict(zip(np.around(np.linspace(minThresh, maxThresh, nFactors), 3), np.around(factorScale, 3)))
-print(thresholdScale)
+#print(thresholdScale)

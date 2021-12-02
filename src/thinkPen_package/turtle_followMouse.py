@@ -83,6 +83,7 @@ yertle.resizemode('user')
 yertle.shapesize(initialSize*0.2, initialSize*0.2*3)
 yertle.pensize(initialPenSize*0.2)
 
+yertle.penup()
 yertle.home()
 yertle.goto(-50, 50)
 yertle.speed('fastest')

@@ -17,9 +17,6 @@ import time
 
 currentDir = os.path.abspath(os.path.curdir) #get python file location
 
-lastUndoTime = time.monotonic()
-thinkPen.yertle.setundobuffer(10000)
-
 def getMotion():
     motion_dX_dY_squal_lift = mouse.getDeltas()
     dX = 0
@@ -33,7 +30,7 @@ def getMotion():
     return [dX, dY]
 
 def pen_undo():
-    if(((time.monotonic() - lastUndoTime) > 0.5) and (thinkPen.yertle.undobufferentries() > 0)):
+    while(thinkPen.yertle.undobufferentries()):
         thinkPen.yertle.undo()
 
 def savePenFile():
@@ -104,12 +101,13 @@ try:
             dX_dY[0] = dX_dY[0]/thinkPen.screen.xscale
             dX_dY[1] = dX_dY[1]/thinkPen.screen.yscale
 
-        
                 
             if(contact_penSize[0]):
                 if(thinkPen.contactF == False):
+                    downTime = time.monotonic()
                     print('touching')
-                        
+                    if((downTime - upTime) > 0.4):
+                        thinkPen.yertle.setundobuffer(1000)
                 thinkPen.contactF = True
 
             
@@ -119,6 +117,7 @@ try:
                 #print(contact_penSize[1])
             else:
                 if(thinkPen.contactF == True):
+                    upTime = time.monotonic()
                     print('not touching')
                     #pen_undo()
                 thinkPen.contactF = False
